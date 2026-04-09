@@ -1,0 +1,6 @@
+runner/venv/
+runner/__pycache__/
+runner/steps/__pycache__/
+results/
+*.pdf
+*.pyc
