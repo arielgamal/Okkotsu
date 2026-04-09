@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <div class="toolbar">
+    <button id="btn-record" class="btn">⏺ Gravar</button>
+    <button id="btn-clear" class="btn btn-secondary">Limpar</button>
+    <input id="filter-input" class="filter-input" type="text" placeholder="Filtrar por URL...">
+    <span id="count-label" class="count-label">0 requisições</span>
+  </div>
+
+  <div class="main">
+    <!-- Coluna 1: requisições capturadas -->
+    <div class="request-list" id="request-list">
+      <div class="empty-list">Clique em Gravar e navegue no site</div>
+    </div>
+
+    <!-- Coluna 2: detalhe / configuração do step -->
+    <div class="detail-panel" id="detail">
+      <div class="empty">Selecione uma requisição para configurar o step</div>
+    </div>
+
+    <!-- Coluna 3: steps adicionados -->
+    <div class="steps-panel">
+      <div class="steps-header">
+        <span class="steps-title">Steps</span>
+        <span id="steps-count" class="steps-count">0</span>
+      </div>
+
+      <div id="steps-list" class="steps-list">
+        <div class="steps-empty">Nenhum step adicionado</div>
+      </div>
+
+      <div class="steps-footer">
+        <input id="pipeline-name" class="pipeline-name-input" type="text" placeholder="Nome da pipeline...">
+        <button id="btn-export-pipeline" class="btn-export-pipeline" disabled>⬇ Exportar Pipeline</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="panel.js"></script>
+</body>
+</html>

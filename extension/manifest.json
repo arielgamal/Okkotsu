@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Spec Recorder",
+  "version": "1.0",
+  "description": "Grava requisições HTTP e exporta como spec JSON para automação",
+  "permissions": ["storage", "downloads"],
+  "devtools_page": "devtools.html",
+  "background": {
+    "service_worker": "background.js"
+  }
+}

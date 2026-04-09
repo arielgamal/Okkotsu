@@ -1,0 +1,59 @@
+{
+  "name": "DIARIO-PRETOLEO",
+  "version": "1.0",
+  "steps": [
+    {
+      "type": "crawler",
+      "url": "https://www.in.gov.br/consulta/-/buscar/dou",
+      "method": "GET",
+      "headers": {
+        ":authority": "www.in.gov.br",
+        ":method": "GET",
+        ":path": "/consulta/-/buscar/dou?q=*&s=todos&exactDate=personalizado&sortType=0&delta=20&publishFrom=09%2F04%2F2026&publishTo=09%2F04%2F2026&orgPrin=Minist%C3%A9rio+de+Minas+e+Energia&orgSub=Ag%C3%AAncia+Nacional+do+Petr%C3%B3leo%2C+G%C3%A1s+Natural+e+Biocombust%C3%ADveis",
+        ":scheme": "https",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "accept-encoding": "gzip, deflate, br, zstd",
+        "accept-language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "cookie": "_ga=GA1.3.1712952033.1775510754; _gid=GA1.3.79109453.1775742270; _gat=1; az_asm=CztK6rud1GapW0zc+MQ2XOaLv0X6wIcApLDdSAd5AmcUrUri7NpAQU20AuL0x2PVMmF6mu2Tq549yLp7; az_botm=3b7e7cd5c3d9545143d76eb678daab76; LFR_SESSION_STATE_20158=1775751222386",
+        "priority": "u=0, i",
+        "referer": "https://www.in.gov.br/consulta/-/buscar/dou?q=*&s=todos&exactDate=personalizado&sortType=0&delta=20&publishFrom=09%2F04%2F2026&publishTo=09%2F04%2F2026&orgPrin=Minist%C3%A9rio+de+Minas+e+Energia",
+        "sec-ch-ua": "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Google Chrome\";v=\"146\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-user": "?1",
+        "upgrade-insecure-requests": "1",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+      },
+      "statusCode": 200,
+      "contentType": "query",
+      "data": {
+        "q": "*",
+        "s": "todos",
+        "exactDate": "personalizado",
+        "sortType": "0",
+        "delta": "20",
+        "publishFrom": "{{data_inicial}}",
+        "publishTo": "{{data_final}}",
+        "orgPrin": "Ministério de Minas e Energia",
+        "orgSub": "Agência Nacional do Petróleo, Gás Natural e Biocombustíveis"
+      },
+      "samples": {
+        "q": "*",
+        "s": "todos",
+        "exactDate": "personalizado",
+        "sortType": "0",
+        "delta": "20",
+        "publishFrom": "09/04/2026",
+        "publishTo": "09/04/2026",
+        "orgPrin": "Ministério de Minas e Energia",
+        "orgSub": "Agência Nacional do Petróleo, Gás Natural e Biocombustíveis"
+      },
+      "id": "req_1775751243760_7s8k",
+      "name": "step_0",
+      "activated": true
+    }
+  ]
+}
