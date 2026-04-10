@@ -15,15 +15,24 @@ class ParserStep:
 
     # ── Template substitution ──────────────────────────────────────────────
 
-    def substitute(self, value: str) -> str:
+    def substitute(self, value: str, local: dict = None) -> str:
+        """Resolve {{expr}} — expressão Python com acesso aos campos extraídos e params."""
         if not isinstance(value, str):
             return value
 
-        def replace(m):
-            name = m.group(1)
-            return str(self.params.get(name, m.group(0)))
+        # Variáveis disponíveis dentro do {{ }}
+        scope = {**self.params, **(local or {})}
 
-        return re.sub(r'\{\{(\w+)\}\}', replace, value)
+        def replace(m):
+            expr = m.group(1).strip()
+            try:
+                result = eval(expr, {"__builtins__": {}}, scope)  # noqa: S307
+                return str(result) if result is not None else ''
+            except Exception as e:
+                print(f'  aviso: erro ao avaliar {{{{ {expr} }}}}: {e}')
+                return m.group(0)
+
+        return re.sub(r'\{\{([^}]+)\}\}', replace, value)
 
     # ── Main execution ─────────────────────────────────────────────────────
 
@@ -45,38 +54,63 @@ class ParserStep:
 
         if last_json is not None:
             print('  modo: JSON')
-            result = self._parse_json_fields(last_json, fields)
+            soup = None
         elif last_html:
             print('  modo: HTML/CSS')
             soup = BeautifulSoup(last_html, 'html.parser')
-            result = self._parse_html_fields(soup, fields)
         else:
             print('  nenhum conteúdo disponível para parsear')
             return
+
+        # Processa campos em ordem — cada campo fica disponível para os seguintes
+        result = {}
+        events = []
+        for field in fields:
+            name = field['name']
+
+            # Campo calculado via template (não usa seletor)
+            if 'value' in field:
+                extracted = self.substitute(field['value'], local=result)
+                # Tenta converter para número se vier de parse_numeric
+                try:
+                    extracted = int(extracted) if str(extracted).isdigit() else extracted
+                except (ValueError, TypeError):
+                    pass
+            elif last_json is not None:
+                extracted = self._extract_json_field(last_json, field)
+            else:
+                extracted = self._extract_html_field(soup, field)
+
+            result[name] = extracted
+
+            # emit_event: registra no contexto como evento nomeado
+            emit = field.get('emit_event')
+            if emit:
+                events.append({'event': emit, 'value': extracted})
+                print(f'  [{emit}] = {extracted}')
 
         # Log resumido
         preview = json.dumps(result, ensure_ascii=False, default=str)
         print(f'  extraído: {preview[:300]}{"..." if len(preview) > 300 else ""}')
 
-        # Valores simples (str/int/float) entram nos params para steps seguintes
-        if isinstance(result, dict):
-            self.params.update({
-                k: v for k, v in result.items()
-                if isinstance(v, (str, int, float))
-            })
+        # Valores simples entram nos params para steps seguintes
+        self.params.update({
+            k: v for k, v in result.items()
+            if isinstance(v, (str, int, float))
+        })
 
         self.context['last_result'] = result
+        if events:
+            self.context.setdefault('events', []).extend(events)
 
-        # Salva em arquivo se configurado
-        output_file = self.spec.get('output_file')
-        if output_file:
-            name = re.sub(r'[<>:"/\\|?*]', '_', self.substitute(output_file))
-            output = self.output_dir / name
-            output.write_text(
-                json.dumps(result, ensure_ascii=False, indent=2, default=str),
-                encoding='utf-8'
-            )
-            print(f'  resultado salvo → {output}')
+        # Salva sempre em JSON com o nome do step
+        step_name = re.sub(r'[<>:"/\\|?*]', '_', self.spec.get('name', 'parser'))
+        output = self.output_dir / f'{step_name}.json'
+        output.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2, default=str),
+            encoding='utf-8'
+        )
+        print(f'  resultado salvo → {output}')
 
     # ── JSON parsing ───────────────────────────────────────────────────────
 

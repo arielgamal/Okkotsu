@@ -1,59 +1,88 @@
-# Robô de Automação baseado em Spec JSON
+# Okkotsu — Robô de Automação baseado em Spec JSON
 
 Um robô que recebe uma spec em formato JSON contendo uma pipeline de steps.
-Cada step executa uma ação e pode ser de qualquer tipo. O runner executa os steps
-em ordem, começando do step 0. A arquitetura é genérica e funciona com qualquer site.
+O runner executa os steps em ordem. A arquitetura é genérica e funciona com qualquer site.
 
 ---
 
-## Arquitetura do projeto
+## Estrutura do projeto
 
 ```
-robo/
-├── extension/          ← Extensão Chrome para gravar e montar a pipeline
+Okkotsu/
+├── extension/          ← Extensão Chrome para montar a pipeline visualmente
+│   ├── manifest.json
+│   ├── background.js   ← Service worker: debugger, picker, download
+│   ├── sidepanel.html  ← Shell HTML do painel lateral
+│   ├── sidepanel.js    ← Toda a lógica de UI (~900 linhas)
+│   └── sidepanel.css   ← Tema escuro
 ├── runner/             ← Runner Python que executa a pipeline
-│   ├── main.py
-│   ├── runner.py       ← Lê os steps e despacha para o tipo correto
+│   ├── main.py         ← Entrada CLI
+│   ├── runner.py       ← Orquestra steps, mantém contexto compartilhado
 │   └── steps/
-│       └── crawler.py  ← Implementação do tipo "crawler"
+│       ├── crawler.py  ← Step tipo "crawler" (navegação Playwright)
+│       └── parser.py   ← Step tipo "parser" (extração de dados)
 ├── specs/              ← Arquivos de pipeline JSON
-├── results/            ← PDFs e resultados gerados
-└── params.json         ← Valores das variáveis
+├── results/            ← JSONs e PDFs gerados pelo runner
+└── params.json         ← Valores das variáveis em tempo de execução
 ```
 
 ---
 
-## Extensão Chrome (Spec Recorder)
+## Extensão Chrome (Okkotsu)
 
-Painel dentro do DevTools (F12 → aba "Spec Recorder") com 3 colunas:
+A extensão usa o **Side Panel** do Chrome (não o DevTools). O painel fica sempre visível
+na lateral do browser, sem desaparecer durante navegação.
 
-**Coluna 1 — Requisições capturadas**
-- Botão ⏺ Gravar / ⏹ Parar
-- Lista todas as requisições HTTP feitas durante a gravação
-- Botão × para deletar qualquer requisição da lista
-- Filtro por URL
+### Interface
 
-**Coluna 2 — Configuração do step**
-- Ao clicar numa requisição, exibe seus detalhes
-- Permite dar um nome ao step
-- Para cada campo da requisição: marcar como variável `{{nome}}`
-- Seletor CSS do botão "Imprimir" (opcional)
-- Nome do arquivo de saída (opcional)
-- Botão **+ Adicionar como Step N** → adiciona ao painel de steps
+O painel é centrado na **pipeline**. Os steps se formam inline, um abaixo do outro.
 
-**Coluna 3 — Steps da pipeline**
-- Lista os steps adicionados em ordem (0, 1, 2...)
-- Botão × para remover qualquer step
-- Campo para nome da pipeline
-- Botão **⬇ Exportar Pipeline** → gera o JSON final
+- **Header**: campo para nome da pipeline + botão `⬇ JSON` (exportar spec)
+- **Step cards**: cada step adicionado aparece como cartão expansível com badge de tipo,
+  nome, resumo, chevron e botão `×` para remover
+- **+ Adicionar step**: abre seletor de tipo inline → formulário de configuração → confirma
 
-**Como usar:**
+### Tipos de step
+
+| Tipo | Badge | Descrição |
+|---|---|---|
+| `crawler` | 📡 crawler | Grava e usa uma requisição HTTP |
+| `parser` | ⬡ parser | Extrai valores do HTML ou JSON |
+| `lista` | ☰ lista | Extrai uma lista de itens com seletor CSS de container |
+
+### Como usar (Crawler)
+
 1. Carregar `extension/` em `chrome://extensions` (modo desenvolvedor)
-2. Abrir F12 → aba "Spec Recorder"
-3. Clicar ⏺ Gravar → navegar e usar o site normalmente → ⏹ Parar
-4. Selecionar a requisição desejada, configurar variáveis e nome
-5. Clicar "+ Adicionar como Step" → repetir para cada step
-6. Dar nome à pipeline e clicar "⬇ Exportar Pipeline"
+2. Clicar no ícone da extensão → painel lateral abre
+3. Clicar **+ Adicionar step** → **Requisição**
+4. Clicar **⏺ Gravar** → navegar e usar o site → **⏹ Parar**
+5. Clicar na requisição desejada → tela de configuração:
+   - Dar nome ao step
+   - Marcar parâmetros que devem ser variáveis `{{nome}}`
+   - Definir nome de arquivo para salvar conteúdo (opcional)
+6. Clicar **+ Adicionar Step** → step aparece na pipeline
+7. Repetir para cada step, depois exportar o JSON
+
+### Como usar (Parser / Lista)
+
+1. Clicar **+ Adicionar step** → **Parser** ou **Lista**
+2. Dar nome ao step
+3. **Lista**: definir o seletor CSS do container de cada item (botão `⊕ Pick` para clicar na página)
+4. Clicar **+ Campo** para cada campo a extrair:
+   - **Nome**: nome do campo no resultado JSON
+   - **Tipo**: `Text`, `DateTime`, `Number`
+   - **Modo**: `CSS` (seletor na página) | `JSON` (json_path) | `Calc.` (expressão Python)
+   - **Seletor**: digitar ou usar `⊕ Pick` para clicar no elemento da página
+   - **Atributo**: opcional (`href`, `innerHTML`, etc.)
+   - **Regex**: opcional para filtrar o texto extraído
+   - Botão **Testar**: valida o seletor contra a aba ativa e mostra preview
+5. Clicar **+ Adicionar Step**
+
+### Picker (`⊕ Pick`)
+
+Injeta um script na aba ativa que destaca elementos ao passar o mouse.
+Ao clicar num elemento, retorna o seletor CSS automaticamente.
+`Esc` cancela. Pode ser usado várias vezes — substitui o campo anterior.
 
 ---
 
@@ -66,34 +95,33 @@ Painel dentro do DevTools (F12 → aba "Spec Recorder") com 3 colunas:
   "steps": [
     {
       "type": "crawler",
-      "name": "busca_resultados",
+      "name": "step_0",
+      "activated": true,
       "url": "https://www.in.gov.br/consulta/-/buscar/dou",
       "method": "GET",
       "headers": { "...": "..." },
-      "statusCode": 200,
       "contentType": "query",
+      "statusCode": 200,
       "data": {
         "q": "{{termo}}",
         "publishFrom": "{{data_inicio}}",
-        "publishTo": "{{data_fim}}",
-        "orgPrin": "{{orgao}}"
+        "publishTo": "{{data_fim}}"
       },
       "samples": {
         "q": "*",
         "publishFrom": "09/04/2026",
-        "publishTo": "09/04/2026",
-        "orgPrin": "Ministério de Minas e Energia"
-      },
-      "id": "req_abc123",
-      "activated": true
+        "publishTo": "09/04/2026"
+      }
     },
     {
-      "type": "crawler",
-      "name": "salvar_pdf",
-      "url": "...",
-      "print_selector": ".btn-imprimir",
-      "output_file": "resultado_{{termo}}_{{data_inicio}}.pdf",
-      "activated": true
+      "type": "parser",
+      "name": "parser_1",
+      "activated": true,
+      "fields": [
+        { "name": "total",  "type": "TextField", "mode": "css", "css_selector": "p.search-total-label" },
+        { "name": "titulo", "type": "TextField", "mode": "json", "json_path": "data.[*].titulo" },
+        { "name": "resumo", "type": "TextField", "mode": "computed", "value": "{{titulo.strip()[:100]}}" }
+      ]
     }
   ]
 }
@@ -103,27 +131,115 @@ Painel dentro do DevTools (F12 → aba "Spec Recorder") com 3 colunas:
 
 | Campo | Padrão | Descrição |
 |---|---|---|
-| `type` | ✓ obrigatório | Tipo do step (`crawler`) |
-| `name` | ✓ obrigatório | Nome identificador do step |
-| `url` | ✓ obrigatório | URL da requisição |
+| `type` | obrigatório | `"crawler"` |
+| `name` | obrigatório | Nome identificador do step |
+| `url` | obrigatório | URL da requisição (suporta `{{variavel}}`) |
 | `method` | `"GET"` | `GET` ou `POST` |
 | `headers` | — | Headers HTTP capturados |
-| `data` | — | Parâmetros (suporta `{{variavel}}`) |
-| `samples` | — | Valores de exemplo capturados (referência) |
+| `data` | — | Parâmetros query/body (suporta `{{variavel}}`) |
+| `samples` | — | Valores de exemplo capturados (referência, não usado pelo runner) |
+| `contentType` | — | Metadado informativo (`query`, `form`, `json`, `raw`) |
+| `statusCode` | — | Metadado informativo do status HTTP capturado |
 | `activated` | `true` | Se `false`, o step é pulado |
+| `save_content` | — | Salva HTML ou JSON da página em `results/` (ex: `"pagina_{{data}}"`) — extensão adicionada automaticamente |
 | `output_file` | — | Nome do PDF de saída (suporta `{{variavel}}`) |
-| `print_selector` | — | CSS selector do botão imprimir |
-| `stealth` | `true` | Patches anti-detecção de bot (navigator.webdriver, plugins, etc.) |
-| `headless` | `false` | Rodar sem abrir janela do browser |
-| `wait_until` | `"load"` | Quando considerar a página carregada: `load`, `networkidle`, `domcontentloaded` |
-| `timeout` | `30000` | Timeout em ms para navegação e seletores |
+| `print_selector` | — | CSS selector do botão imprimir — clica e salva PDF da nova aba |
+| `headless` | `false` | Se `true`, roda sem abrir janela do browser |
+| `stealth` | `true` | Patches anti-detecção (navigator.webdriver, plugins, etc.) |
+| `wait_until` | `"networkidle"` | Quando considerar a página carregada: `load`, `networkidle`, `domcontentloaded` |
+| `timeout` | `30000` | Timeout em ms |
 | `proxy` | — | Proxy HTTP/HTTPS: `"http://usuario:senha@host:porta"` |
-| `profile` | — | Caminho para perfil persistente do browser (salva cookies e login entre execuções) |
+| `profile` | — | Caminho para perfil persistente do browser (mantém cookies/login) |
 
-### Variáveis (`{{variavel}}`)
+### Campos do step `parser`
 
-Campos marcados com `{{variavel}}` são substituídos pelos valores de `params.json`
-antes de executar o step.
+| Campo | Padrão | Descrição |
+|---|---|---|
+| `type` | obrigatório | `"parser"` |
+| `name` | obrigatório | Nome identificador — também define o nome do arquivo de saída (`{name}.json`) |
+| `activated` | `true` | Se `false`, o step é pulado |
+| `condition` | — | Expressão `{{variavel}}` — se não resolvida, o step é pulado |
+| `fields` | obrigatório | Lista de campos a extrair |
+| `output_file` | — | Reservado (não usado atualmente — saída sempre é `{name}.json`) |
+
+### Propriedades de campo (`fields`)
+
+| Propriedade | Descrição |
+|---|---|
+| `name` | Nome do campo no resultado JSON |
+| `type` | `TextField`, `DateTimeField`, `NumberField`, `ListField`, `DictField` |
+| `mode` | `"css"` (seletor HTML), `"json"` (json_path), `"computed"` (expressão Python) |
+| `css_selector` | Seletor CSS do elemento — modo `css` |
+| `attribute` | Atributo HTML a extrair: `href`, `innerHTML`, etc. Padrão: texto visível |
+| `json_path` | Caminho no JSON: `"data.[*]"`, `"nested.field"` — modo `json` |
+| `value` | Expressão Python com `{{campo}}` — modo `computed` |
+| `regex` | Regex para filtrar o valor extraído |
+| `regex_insensitive` | `true` para case-insensitive |
+| `regex_match_newline` | `true` para `.` casar quebras de linha |
+| `regex_merge` | `true` para concatenar todos os matches |
+| `emit_event` | Nome do evento emitido para o contexto (ex: `"TOTAL_DOCUMENTOS"`) |
+| `required` | Metadado informativo (não impede execução) |
+| `sample` | Valor de exemplo (referência) |
+| `omit_name` | `true` para não aninhar sob o nome do campo (útil em `DictField`) |
+
+### Exemplo — lista via CSS (gerado pelo tipo "Lista" na extensão)
+
+```json
+{
+  "type": "parser",
+  "name": "lista_resultados",
+  "fields": [
+    {
+      "name": "itens",
+      "type": "ListField",
+      "css_selector": ".resultado-item",
+      "omit_name": true,
+      "field": {
+        "type": "DictField",
+        "fields": [
+          { "name": "titulo", "type": "TextField", "mode": "css", "css_selector": "h5.title-marker > a" },
+          { "name": "link",   "type": "TextField", "mode": "css", "css_selector": "a", "attribute": "href" },
+          { "name": "data",   "type": "DateTimeField", "mode": "css", "css_selector": "span.date" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+### Exemplo — extração JSON
+
+```json
+{
+  "type": "parser",
+  "name": "extrai_json",
+  "fields": [
+    {
+      "name": "itens",
+      "type": "ListField",
+      "json_path": "data.[*]",
+      "omit_name": true,
+      "field": {
+        "type": "DictField",
+        "fields": [
+          { "name": "titulo",  "type": "TextField",    "mode": "json", "json_path": "titulo" },
+          { "name": "data",    "type": "DateTimeField", "mode": "json", "json_path": "dataPublicacao" },
+          { "name": "numero",  "type": "TextField",    "mode": "json", "json_path": "numeroProcesso" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+---
+
+## Variáveis (`{{variavel}}`)
+
+Campos com `{{variavel}}` são substituídos pelos valores de `params.json` antes de executar o step.
+Valores extraídos por steps `parser` também ficam disponíveis como variáveis para steps seguintes.
+
+Campos `computed` suportam expressões Python completas: `{{titulo.strip()[:100]}}`.
 
 ---
 
@@ -142,11 +258,11 @@ antes de executar o step.
 
 ## Runner Python
 
-Executa a pipeline em ordem (step 0, 1, 2...), abrindo um browser real (Playwright).
-Steps com `activated: false` são pulados. Novos tipos de step podem ser registrados
-em `runner.py` no dicionário `STEP_REGISTRY`.
+Executa a pipeline em ordem (step 0, 1, 2...). Steps com `activated: false` são pulados.
+O runner mantém um **contexto compartilhado** (`dict`) passado para todos os steps.
 
-**Instalar:**
+### Instalar
+
 ```bash
 cd runner
 python -m venv venv
@@ -155,35 +271,54 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
-**Rodar:**
+### Rodar
+
 ```bash
 python main.py ../specs/pipeline.json
 python main.py ../specs/pipeline.json --params ../params.json --output-dir ../results
 ```
 
-### Comportamento do step `crawler`
+### Contexto compartilhado entre steps
 
-| Configuração | Resultado |
-|---|---|
-| Sem `output_file` e sem `print_selector` | Abre o browser, carrega a página, aguarda Enter |
-| Com `output_file` | Carrega a página, salva como PDF, aguarda Enter |
-| Com `print_selector` | Clica no botão imprimir, salva PDF da nova aba, aguarda Enter |
+| Chave | Definido por | Descrição |
+|---|---|---|
+| `last_html` | `crawler` | HTML completo da última página carregada |
+| `last_json` | `crawler` | JSON parsed (se resposta detectada como JSON) |
+| `last_url` | `crawler` | URL final após navegação |
+| `last_result` | `parser` | Dicionário com o último resultado extraído |
+| `events` | `parser` | Lista de eventos emitidos via `emit_event` |
 
----
+### Comportamento do crawler
 
-## Site alvo: Diário Oficial da União
+- Por padrão abre uma janela visível do browser (não headless)
+- O browser é lançado como processo externo via CDP — ao terminar o step, o Playwright
+  desconecta mas **o browser permanece aberto** para o usuário inspecionar
+- O HTML (ou JSON) da página é sempre salvo no contexto, independente de `save_content`
+- `save_content` salva adicionalmente em arquivo no `output_dir`
+- O runner não espera nenhuma interação do usuário — continua para o próximo step
 
-- URL: `https://www.in.gov.br/consulta/-/buscar`
-- Método: GET com query params
-- Sem captcha
-- Filtros: termo, data, órgão, seção
-- Resultado: lista de publicações com link para cada uma
-- Cada publicação tem botão "Imprimir" → abre versão para impressão em nova aba
+### Comportamento do parser
+
+- Detecta automaticamente se o conteúdo do contexto é JSON ou HTML
+- Processa campos em ordem — cada campo extraído fica disponível para campos seguintes (inclusive campos `computed`)
+- Sempre salva o resultado em `{output_dir}/{step_name}.json`
+- Valores simples (string/número) são promovidos a variáveis `{{nome}}` para steps seguintes
+
+### Registrar novo tipo de step
+
+Em `runner/runner.py`, adicionar ao dicionário:
+
+```python
+STEP_REGISTRY = {
+    'crawler': CrawlerStep,
+    'parser':  ParserStep,
+    'meu_tipo': MeuStep,   # ← novo tipo
+}
+```
 
 ---
 
 ## Próximos steps a implementar
 
-- Step para percorrer a lista de resultados e entrar em cada link
-- Step para clicar em "Imprimir" e salvar PDF de cada publicação
-- Outros tipos de step além do `crawler`
+- Iterar sobre a lista de resultados e entrar em cada link (loop sobre `ListField`)
+- Clicar em "Imprimir" em cada publicação e salvar PDF individual

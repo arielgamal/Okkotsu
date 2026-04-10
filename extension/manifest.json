@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Spec Recorder",
-  "version": "1.0",
-  "description": "Grava requisições HTTP e exporta como spec JSON para automação",
-  "permissions": ["storage", "downloads"],
-  "devtools_page": "devtools.html",
-  "background": {
-    "service_worker": "background.js"
-  }
+  "version": "2.0",
+  "description": "Grava requisições e constrói specs de pipeline com parser visual.",
+  "permissions": ["storage", "downloads", "debugger", "sidePanel", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "action": { "default_title": "Spec Recorder" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "background": { "service_worker": "background.js" }
 }
