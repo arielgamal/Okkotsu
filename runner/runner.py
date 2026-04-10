@@ -1,9 +1,11 @@
 from pathlib import Path
 from steps.crawler import CrawlerStep
+from steps.parser import ParserStep
 
 # Registre novos tipos de step aqui
 STEP_REGISTRY = {
     'crawler': CrawlerStep,
+    'parser':  ParserStep,
 }
 
 
@@ -12,6 +14,8 @@ class Runner:
         self.spec = spec
         self.params = params
         self.output_dir = output_dir
+        # Contexto compartilhado entre steps (HTML, JSON, resultados)
+        self.context: dict = {}
 
     async def run(self):
         # Suporta pipeline { "steps": [...] } e spec legada (step único)
@@ -35,5 +39,5 @@ class Runner:
                 print(f'[step {i}: {name}] tipo desconhecido: "{step_type}" — pulando\n')
                 continue
 
-            step = StepClass(step_spec, self.params, self.output_dir)
+            step = StepClass(step_spec, self.params, self.output_dir, self.context)
             await step.execute()

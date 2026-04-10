@@ -1,11 +1,20 @@
-import asyncio
 import re
 import json
+import asyncio
+import socket
+import subprocess
+import tempfile
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import urlencode
 
 from playwright.async_api import async_playwright, Page, BrowserContext
+
+
+def _free_port():
+    with socket.socket() as s:
+        s.bind(('', 0))
+        return s.getsockname()[1]
 
 try:
     from playwright_stealth import stealth_async
@@ -32,10 +41,11 @@ STEALTH_SCRIPT = """
 
 
 class CrawlerStep:
-    def __init__(self, spec: dict, params: dict, output_dir: Path):
+    def __init__(self, spec: dict, params: dict, output_dir: Path, context: dict = None):
         self.spec = spec
         self.params = params
         self.output_dir = output_dir
+        self.context = context if context is not None else {}
 
     # ── Template substitution ──────────────────────────────────────────────
 
@@ -70,7 +80,7 @@ class CrawlerStep:
 
         headless    = self.spec.get('headless', False)
         use_stealth = self.spec.get('stealth', True)
-        wait_until  = self.spec.get('wait_until', 'load')
+        wait_until  = self.spec.get('wait_until', 'networkidle')
         timeout     = self.spec.get('timeout', 30_000)
         proxy_url   = self.spec.get('proxy')
         profile     = self.spec.get('profile')  # path p/ contexto persistente
@@ -100,73 +110,117 @@ class CrawlerStep:
             if safe:
                 context_opts['extra_http_headers'] = safe
 
-        launch_opts = {'headless': headless}
-        if proxy_url:
-            launch_opts['proxy'] = {'server': proxy_url}
-
         async with async_playwright() as p:
-            browser = None
-            context: BrowserContext
+            proc = None
 
-            if profile:
+            if not headless:
+                # Lança Chromium como processo externo e conecta via CDP.
+                # Ao desconectar, o browser fica aberto para o usuário ver.
+                port = _free_port()
+                tmp  = tempfile.mkdtemp()
+                args = [
+                    p.chromium.executable_path,
+                    f'--remote-debugging-port={port}',
+                    f'--user-data-dir={tmp}',
+                    '--no-first-run', '--no-default-browser-check',
+                ]
+                if proxy_url:
+                    args.append(f'--proxy-server={proxy_url}')
+                proc = subprocess.Popen(args)
+                await asyncio.sleep(1.5)  # aguarda o browser iniciar
+                browser  = await p.chromium.connect_over_cdp(f'http://localhost:{port}')
+                ctx_list = browser.contexts
+                context  = ctx_list[0] if ctx_list else await browser.new_context(**context_opts)
+            elif profile:
                 profile_path = Path(profile).expanduser()
                 profile_path.mkdir(parents=True, exist_ok=True)
                 context = await p.chromium.launch_persistent_context(
-                    str(profile_path),
-                    **launch_opts,
+                    str(profile_path), headless=True,
+                    **(({'proxy': {'server': proxy_url}} if proxy_url else {})),
                     **context_opts,
                 )
+                browser = None
             else:
+                launch_opts = {'headless': True}
+                if proxy_url:
+                    launch_opts['proxy'] = {'server': proxy_url}
                 browser = await p.chromium.launch(**launch_opts)
                 context = await browser.new_context(**context_opts)
 
             page = await context.new_page()
 
-            # ── Stealth ────────────────────────────────────────────────────
             if use_stealth:
                 if HAS_STEALTH:
                     await stealth_async(page)
                 else:
                     await page.add_init_script(STEALTH_SCRIPT)
 
-            # Detecta fechamento do browser/contexto
-            closed = asyncio.get_event_loop().create_future()
-
-            def on_close(*_):
-                if not closed.done():
-                    closed.set_result(True)
-
-            if browser:
-                browser.on('disconnected', on_close)
-            else:
-                context.on('close', on_close)
-
             try:
                 await self._navigate(page, method, url, data, wait_until, timeout)
                 print(f'  página: {page.url}')
+
+                await self._save_to_context(page)
 
                 if print_selector:
                     await self._click_and_save_pdf(page, print_selector, timeout)
                 elif self.spec.get('output_file'):
                     await self._save_pdf(page)
 
-                print('  Feche a janela do browser para continuar...')
-                await closed
-
-            except Exception:
-                is_alive = browser.is_connected() if browser else not context.pages == []
-                if not is_alive:
-                    pass  # browser fechado pelo usuário — normal
-                else:
-                    raise
             finally:
-                if browser and browser.is_connected():
-                    await browser.close()
-                elif not browser:
-                    try:
-                        await context.close()
-                    except Exception:
-                        pass
+                if not headless:
+                    # Só desconecta — o browser fica aberto para o usuário
+                    try: await browser.close()
+                    except Exception: pass
+                    print('  browser aberto para visualização (feche quando quiser)')
+                elif browser:
+                    try: await browser.close()
+                    except Exception: pass
+                else:
+                    try: await context.close()
+                    except Exception: pass
+
+    # ── Context ────────────────────────────────────────────────────────────
+
+    async def _save_to_context(self, page: Page):
+        html = await page.content()
+        self.context['last_html'] = html
+        self.context['last_url'] = page.url
+        self.context.pop('last_json', None)
+
+        # Tenta detectar se a resposta é JSON puro
+        stripped = html.strip()
+        if stripped.startswith('{') or stripped.startswith('['):
+            try:
+                import json as _json
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(html, 'html.parser')
+                body = soup.find('body')
+                text = body.get_text() if body else stripped
+                self.context['last_json'] = _json.loads(text)
+                print('  conteúdo: JSON detectado')
+            except Exception:
+                pass
+
+        # Salva em arquivo se configurado
+        save_content = self.spec.get('save_content')
+        if save_content:
+            name = re.sub(r'[<>:"/\\|?*]', '_', self.substitute(save_content))
+            # Garante extensão correta
+            if self.context.get('last_json') is not None and not name.endswith('.json'):
+                name = name + '.json'
+            elif not name.endswith('.html') and not name.endswith('.json'):
+                name = name + '.html'
+
+            output = self.output_dir / name
+            if name.endswith('.json'):
+                import json as _json
+                output.write_text(
+                    _json.dumps(self.context['last_json'], ensure_ascii=False, indent=2),
+                    encoding='utf-8'
+                )
+            else:
+                output.write_text(html, encoding='utf-8')
+            print(f'  conteúdo salvo → {output}')
 
     # ── Navigation ─────────────────────────────────────────────────────────
 
