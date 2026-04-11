@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime
 from urllib.parse import urlencode
 
-from playwright.async_api import async_playwright, Page, BrowserContext
+from playwright.async_api import async_playwright, Page
 
 
 def _free_port():
@@ -159,6 +159,7 @@ class CrawlerStep:
                 await self._navigate(page, method, url, data, wait_until, timeout)
                 print(f'  página: {page.url}')
 
+                await self._wait_dom_stable(page)
                 await self._save_to_context(page)
 
                 if print_selector:
@@ -178,6 +179,21 @@ class CrawlerStep:
                 else:
                     try: await context.close()
                     except Exception: pass
+
+    # ── DOM stability ─────────────────────────────────────────────────────
+
+    async def _wait_dom_stable(self, page: Page, interval: int = 500, max_wait: int = 10_000):
+        """Aguarda o DOM parar de crescer antes de capturar o HTML."""
+        elapsed  = 0
+        prev_size = -1
+        while elapsed < max_wait:
+            size = await page.evaluate('document.documentElement.outerHTML.length')
+            if size == prev_size:
+                return
+            prev_size = size
+            await asyncio.sleep(interval / 1000)
+            elapsed += interval
+        print('  aviso: DOM não estabilizou após 10s, capturando assim mesmo')
 
     # ── Context ────────────────────────────────────────────────────────────
 

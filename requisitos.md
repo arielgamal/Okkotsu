@@ -150,6 +150,36 @@ Ao clicar num elemento, retorna o seletor CSS automaticamente.
 | `timeout` | `30000` | Timeout em ms |
 | `proxy` | — | Proxy HTTP/HTTPS: `"http://usuario:senha@host:porta"` |
 | `profile` | — | Caminho para perfil persistente do browser (mantém cookies/login) |
+| `pagination` | — | Ativa loop de paginação automático (ver abaixo) |
+
+### Paginação automática (`pagination`)
+
+Quando um crawler tem o bloco `pagination`, o runner entra em loop automático com o step seguinte (que deve ser um parser de lista). A página já carregada antes do loop também é parseada automaticamente.
+
+| Campo | Descrição |
+|---|---|
+| `kind` | `"page"` (newPage=1,2,3) ou `"offset"` (start=0,20,40) |
+| `param` | Nome do parâmetro que muda entre páginas (ex: `"newPage"`, `"start"`) |
+| `start` | Valor inicial do parâmetro (padrão: `2` para page, `0` para offset) |
+| `items_per_page` | Quantos itens cabem numa página cheia — detecta a última página |
+| `total_var` | Opcional — variável com total de documentos extraída por um parser anterior |
+
+O parâmetro definido em `param` deve estar no `data` do crawler com `{{param}}` para ser substituído a cada iteração.
+
+Parada automática:
+- Se `total_var` definido: para quando todas as páginas foram cobertas
+- Sempre: para quando a página retorna menos itens que `items_per_page` (última página)
+
+```json
+"data": { "newPage": "{{newPage}}", "delta": "20", ... },
+"pagination": {
+  "kind": "page",
+  "param": "newPage",
+  "start": 2,
+  "items_per_page": 20,
+  "total_var": "total_docs"
+}
+```
 
 ### Campos do step `parser`
 
@@ -295,6 +325,7 @@ python main.py ../specs/pipeline.json --params ../params.json --output-dir ../re
   desconecta mas **o browser permanece aberto** para o usuário inspecionar
 - O HTML (ou JSON) da página é sempre salvo no contexto, independente de `save_content`
 - `save_content` salva adicionalmente em arquivo no `output_dir`
+- Após navegar, aguarda o DOM estabilizar (compara tamanho do HTML a cada 500ms até parar de crescer, máx 10s) antes de capturar — garante que conteúdo renderizado por JavaScript seja capturado
 - O runner não espera nenhuma interação do usuário — continua para o próximo step
 
 ### Comportamento do parser

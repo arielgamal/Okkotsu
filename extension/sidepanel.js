@@ -242,6 +242,41 @@ function renderAddArea() {
           <label>Salvar conteúdo em arquivo <span class="hint">(opcional)</span></label>
           <input type="text" id="save-content" placeholder="ex: pagina_{{data_inicial}}">
         </div>
+        <div class="section-label">
+          Paginação
+          <label style="font-weight:normal;text-transform:none;letter-spacing:0;color:#888;margin-left:4px">
+            <input type="checkbox" id="pag-enabled"> habilitar
+          </label>
+        </div>
+        <div id="pag-fields" style="display:none">
+          <div class="ff-row">
+            <div class="form-group" style="width:90px">
+              <label>Tipo</label>
+              <select id="pag-kind">
+                <option value="page">page</option>
+                <option value="offset">offset</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:2">
+              <label>Parâmetro</label>
+              <select id="pag-param">
+                ${Object.keys(req?.data || {}).map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="width:60px">
+              <label>Início</label>
+              <input type="text" id="pag-start" value="2">
+            </div>
+            <div class="form-group" style="width:70px">
+              <label>Itens/pág.</label>
+              <input type="text" id="pag-items" value="20">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Variável do total <span class="hint">(ex: total_docs — opcional)</span></label>
+            <input type="text" id="pag-total-var" placeholder="ex: total_docs">
+          </div>
+        </div>
         <button class="btn-primary" id="btn-confirm-crawler">+ Adicionar Step ${stepNum}</button>
         <div class="feedback" id="feedback"></div>
       </div>`;
@@ -432,6 +467,10 @@ function bindCrawlerEditor() {
     });
   }
 
+  document.getElementById('pag-enabled')?.addEventListener('change', e => {
+    document.getElementById('pag-fields').style.display = e.target.checked ? '' : 'none';
+  });
+
   document.getElementById('btn-confirm-crawler')?.addEventListener('click', () => {
     if (!selectedReq) return;
     const stepName    = document.getElementById('step-name')?.value.trim()    || `step_${steps.length}`;
@@ -442,12 +481,26 @@ function bindCrawlerEditor() {
       specData[k] = varMap[k] ? `{{${varMap[k]}}}` : v;
     }
     const step = {
-      type: 'crawler', name: stepName, activated: true,
+      name: stepName, type: 'crawler',
       url: selectedReq.baseUrl, method: selectedReq.method,
       headers: selectedReq.headers, statusCode: selectedReq.statusCode,
-      contentType: selectedReq.contentType, data: specData, samples,
+      data: specData, samples,
     };
     if (saveContent) step.save_content = saveContent;
+
+    const pagEnabled = document.getElementById('pag-enabled')?.checked;
+    if (pagEnabled) {
+      const kind         = document.getElementById('pag-kind')?.value  || 'page';
+      const param        = document.getElementById('pag-param')?.value || '';
+      const start        = parseInt(document.getElementById('pag-start')?.value || (kind === 'page' ? '2' : '0'));
+      const itemsPerPage = parseInt(document.getElementById('pag-items')?.value || '20');
+      const totalVar     = document.getElementById('pag-total-var')?.value.trim() || '';
+      if (param) {
+        step.pagination = { kind, param, start, items_per_page: itemsPerPage };
+        if (totalVar) step.pagination.total_var = totalVar;
+      }
+    }
+
     steps.push(step);
     saveState();
     selectedReq = null; varMap = {}; adding = null;
@@ -470,8 +523,7 @@ function bindParserEditor() {
     document.getElementById('btn-pick-list')?.addEventListener('click', () =>
       startPick(null, sel => {
         parser.listSelector = sel;
-        const inp = document.getElementById('parser-list-sel');
-        if (inp) inp.value = sel;
+        listInp.value = sel;
         testListSel();
       })
     );
@@ -481,7 +533,7 @@ function bindParserEditor() {
   document.getElementById('btn-confirm-parser')?.addEventListener('click', () => {
     const name    = document.getElementById('parser-name')?.value.trim()  || `parser_${steps.length}`;
     const out     = document.getElementById('parser-output')?.value.trim() || '';
-    const listSel = parser.listSelector.trim();
+    const listSel = (document.getElementById('parser-list-sel')?.value || parser.listSelector).trim();
 
     if (!parser.fields.length) {
       showFeedback('parser-feedback', 'Adicione pelo menos um campo'); return;
@@ -495,7 +547,7 @@ function bindParserEditor() {
       if (f.mode === 'computed') { spec.value = f.value; }
       else if (f.mode === 'css') {
         spec.css_selector = f.css_selector;
-        spec.attribute    = f.attribute || null;
+        if (f.attribute) spec.attribute = f.attribute;
       } else { spec.json_path = f.json_path; }
       if (f.regex)               spec.regex               = f.regex;
       if (f.regex_merge)         spec.regex_merge         = f.regex_merge;
@@ -511,7 +563,7 @@ function bindParserEditor() {
       ? [{ name: 'itens', type: 'ListField', css_selector: listSel, omit_name: true, field: { type: 'DictField', fields } }]
       : fields;
 
-    const step = { type: 'parser', name, activated: true, fields: stepFields };
+    const step = { name, type: 'parser', fields: stepFields };
     if (out) step.output_file = out;
 
     steps.push(step);
@@ -703,22 +755,52 @@ async function testFieldSel(selector) {
   if (!el || !selector) return;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return;
+
+  const regex   = document.getElementById('ff-regex')?.value.trim()      || '';
+  const flagI   = document.getElementById('ff-regex-i')?.checked          || false;
+  const flagNl  = document.getElementById('ff-regex-nl')?.checked         || false;
+  const flagMrg = document.getElementById('ff-regex-merge')?.checked      || false;
+
   chrome.scripting.executeScript({
     target: { tabId: tab.id },
-    func: (sel, ctx) => {
+    func: (sel, ctx, rgx, flagI, flagNl, flagMrg) => {
       try {
         const base = ctx ? document.querySelector(ctx) : document;
         const els  = base ? base.querySelectorAll(sel) : [];
-        return { count: els.length, samples: Array.from(els).slice(0,2).map(e => e.textContent.trim().slice(0,50)) };
+        const samples = Array.from(els).slice(0, 2).map(e => {
+          let text = e.textContent.trim();
+          if (rgx) {
+            try {
+              let flags = 'g' + (flagI ? 'i' : '') + (flagNl ? 's' : '');
+              const matches = [...text.matchAll(new RegExp(rgx, flags))];
+              if (!matches.length) return { raw: text.slice(0, 60), matched: null };
+              if (flagMrg) {
+                const merged = matches.map(m => m[1] ?? m[0]).join('');
+                return { raw: text.slice(0, 60), matched: merged.slice(0, 80) };
+              }
+              const first = matches[0];
+              return { raw: text.slice(0, 60), matched: (first[1] ?? first[0]).slice(0, 80) };
+            } catch { return { raw: text.slice(0, 60), matched: '⚠ regex inválido' }; }
+          }
+          return { raw: text.slice(0, 60), matched: null };
+        });
+        return { count: els.length, samples };
       } catch { return { count: -1, samples: [] }; }
     },
-    args: [selector, parser.listSelector || null],
+    args: [selector, parser.listSelector || null, regex, flagI, flagNl, flagMrg],
   }, results => {
     const { count, samples } = results?.[0]?.result || { count: -1, samples: [] };
-    el.textContent = count < 0 ? '✗ seletor inválido'
-      : count ? `✓ ${count} elemento(s): ${samples.map(s=>`"${s}"`).join(' | ')}`
-      : '✗ nenhum elemento';
-    el.className = 'pick-hint ' + (count > 0 ? 'ok' : 'err');
+    if (count < 0)  { el.textContent = '✗ seletor inválido'; el.className = 'pick-hint err'; return; }
+    if (!count)     { el.textContent = '✗ nenhum elemento';  el.className = 'pick-hint err'; return; }
+
+    el.className = 'pick-hint ok';
+    el.innerHTML = samples.map(s => {
+      const raw     = `<span style="color:#9cdcfe">"${esc(s.raw)}"</span>`;
+      const matched = s.matched !== null
+        ? ` → <span style="color:#6fcf6f">"${esc(s.matched)}"</span>`
+        : '';
+      return raw + matched;
+    }).join('<br>');
   });
 }
 
@@ -762,18 +844,68 @@ function saveField(editIdx) {
 }
 
 // ── Export ────────────────────────────────────────────────────────────────
+function normalizeStep(s) {
+  if (s.type === 'crawler') {
+    const ordered = { name: s.name, type: s.type, url: s.url, method: s.method };
+    if (s.headers)     ordered.headers    = s.headers;
+    if (s.statusCode)  ordered.statusCode = s.statusCode;
+    if (s.data)        ordered.data       = s.data;
+    if (s.samples)     ordered.samples    = s.samples;
+    if (s.save_content)ordered.save_content = s.save_content;
+    if (s.output_file) ordered.output_file  = s.output_file;
+    if (s.print_selector) ordered.print_selector = s.print_selector;
+    if (s.pagination)  ordered.pagination  = s.pagination;
+    return ordered;
+  }
+  if (s.type === 'parser') {
+    const ordered = { name: s.name, type: s.type, fields: s.fields };
+    if (s.output_file) ordered.output_file = s.output_file;
+    if (s.condition)   ordered.condition   = s.condition;
+    return ordered;
+  }
+  return s;
+}
+
+function normalizeField(f) {
+  const ordered = { name: f.name, type: f.type };
+  if (f.css_selector)        ordered.css_selector        = f.css_selector;
+  if (f.json_path)           ordered.json_path           = f.json_path;
+  if (f.value)               ordered.value               = f.value;
+  if (f.attribute)           ordered.attribute           = f.attribute;
+  if (f.regex)               ordered.regex               = f.regex;
+  if (f.regex_merge)         ordered.regex_merge         = f.regex_merge;
+  if (f.regex_insensitive)   ordered.regex_insensitive   = f.regex_insensitive;
+  if (f.regex_match_newline) ordered.regex_match_newline = f.regex_match_newline;
+  if (f.emit_event)          ordered.emit_event          = f.emit_event;
+  if (f.sample)              ordered.sample              = f.sample;
+  if (f.required === false)  ordered.required            = false;
+  if (f.omit_name)           ordered.omit_name           = f.omit_name;
+  if (f.field)               ordered.field               = { type: f.field.type, fields: (f.field.fields || []).map(normalizeField) };
+  if (f.fields)              ordered.fields              = f.fields.map(normalizeField);
+  return ordered;
+}
+
 function exportPipeline() {
   const name = pipelineName || 'pipeline';
+  const normalized = steps.map(s => {
+    const step = normalizeStep(s);
+    if (step.fields) step.fields = step.fields.map(normalizeField);
+    return step;
+  });
   chrome.runtime.sendMessage({
     action:  'download',
-    content: JSON.stringify({ name, version: '1.0', steps }, null, 2),
+    content: JSON.stringify({ name, version: '1.0', steps: normalized }, null, 2),
     filename: `${name}.json`,
   });
 }
 
 // ── Picker ────────────────────────────────────────────────────────────────
 async function startPick(relativeTo, callback) {
-  if (isPicking) return;
+  // Se já estava picking, cancela a anterior e recomeça
+  isPicking = false;
+  pickCallback = null;
+  document.querySelector('.picking-indicator')?.remove();
+
   isPicking = true;
   pickCallback = callback;
 

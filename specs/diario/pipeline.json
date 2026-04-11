@@ -1,0 +1,133 @@
+{
+  "name": "pipeline",
+  "version": "1.0",
+  "steps": [
+    {
+      "name": "step_0",
+      "type": "crawler",
+      "url": "https://www.in.gov.br/consulta/-/buscar/dou",
+      "method": "GET",
+      "headers": {
+        "Referer": "https://www.in.gov.br/consulta/-/buscar/dou?q=*&s=todos&exactDate=personalizado&sortType=0&delta=20&publishFrom=07%2F04%2F2026&publishTo=07%2F04%2F2026&orgPrin=Minist%C3%A9rio+de+Minas+e+Energia",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Google Chrome\";v=\"146\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\""
+      },
+      "statusCode": 200,
+      "data": {
+        "delta": "20",
+        "exactDate": "personalizado",
+        "orgPrin": "Ministério de Minas e Energia",
+        "orgSub": "Agência Nacional do Petróleo, Gás Natural e Biocombustíveis",
+        "publishFrom": "07/04/2026",
+        "publishTo": "07/04/2026",
+        "q": "*",
+        "s": "todos",
+        "sortType": "0"
+      },
+      "samples": {
+        "delta": "20",
+        "exactDate": "personalizado",
+        "orgPrin": "Ministério de Minas e Energia",
+        "orgSub": "Agência Nacional do Petróleo, Gás Natural e Biocombustíveis",
+        "publishFrom": "07/04/2026",
+        "publishTo": "07/04/2026",
+        "q": "*",
+        "s": "todos",
+        "sortType": "0"
+      }
+    },
+    {
+      "name": "parser_1",
+      "type": "parser",
+      "fields": [
+        {
+          "name": "total_docs",
+          "type": "TextField",
+          "css_selector": "p.search-total-label.text-default",
+          "regex": "^\\s*\\d+"
+        }
+      ]
+    },
+    {
+      "name": "step_2",
+      "type": "crawler",
+      "url": "https://www.in.gov.br/consulta/-/buscar/dou",
+      "method": "GET",
+      "headers": {
+        "Referer": "https://www.in.gov.br/consulta/-/buscar/dou?q=*&s=todos&exactDate=personalizado&sortType=0&delta=20&currentPage=2&newPage=1&score=0&id=697801052&displayDate=1775530800000&publishFrom=07%2F04%2F2026&publishTo=07%2F04%2F2026&reverseSort=1&orgPrin=Minist%C3%A9rio+de+Minas+e+Energia&orgSub=Ag%C3%AAncia+Nacional+do+Petr%C3%B3leo%2C+G%C3%A1s+Natural+e+Biocombust%C3%ADveis",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+        "sec-ch-ua": "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Google Chrome\";v=\"146\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\""
+      },
+      "statusCode": 200,
+      "data": {
+        "q": "*",
+        "s": "todos",
+        "exactDate": "personalizado",
+        "sortType": "0",
+        "delta": "20",
+        "currentPage": "1",
+        "newPage": "{{newPage}}",
+        "score": "0",
+        "id": "697759781",
+        "displayDate": "1775530800000",
+        "publishFrom": "07/04/2026",
+        "publishTo": "07/04/2026",
+        "reverseSort": "1",
+        "orgPrin": "Ministério de Minas e Energia",
+        "orgSub": "Agência Nacional do Petróleo, Gás Natural e Biocombustíveis"
+      },
+      "samples": {
+        "q": "*",
+        "s": "todos",
+        "exactDate": "personalizado",
+        "sortType": "0",
+        "delta": "20",
+        "currentPage": "1",
+        "newPage": "2",
+        "score": "0",
+        "id": "697759781",
+        "displayDate": "1775530800000",
+        "publishFrom": "07/04/2026",
+        "publishTo": "07/04/2026",
+        "reverseSort": "1",
+        "orgPrin": "Ministério de Minas e Energia",
+        "orgSub": "Agência Nacional do Petróleo, Gás Natural e Biocombustíveis"
+      },
+      "pagination": {
+        "kind": "page",
+        "param": "newPage",
+        "start": 2,
+        "items_per_page": 20,
+        "total_var": "total_docs"
+      }
+    },
+    {
+      "name": "lista_3",
+      "type": "parser",
+      "fields": [
+        {
+          "name": "itens",
+          "type": "ListField",
+          "css_selector": "div.resultados-wrapper > div.resultado",
+          "omit_name": true,
+          "field": {
+            "type": "DictField",
+            "fields": [
+              {
+                "name": "titulo",
+                "type": "TextField",
+                "css_selector": "h5.title-marker > a"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
